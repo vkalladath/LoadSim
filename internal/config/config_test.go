@@ -282,6 +282,18 @@ func TestPresetKeepsDetectionOn(t *testing.T) {
 	}
 }
 
+// A CPU request guessed from cpu.weight must not survive as a value above an
+// explicitly configured limit; percentages of "request" would then be wrong.
+func TestImplausibleRequestEstimateDropped(t *testing.T) {
+	_, c := load(t, "--cpu", "50%", "--cpu-limit", "1", "--memory-limit", "512Mi")
+	if r := c.Resources.CPURequestCores; r > c.Resources.CPULimitCores {
+		t.Errorf("cpu request %v exceeds the configured limit %v", r, c.Resources.CPULimitCores)
+	}
+	if src, ok := c.Resources.Sources["cpu_request"]; ok && strings.Contains(src, "estimate") {
+		t.Errorf("an implausible estimated request was kept (source %q)", src)
+	}
+}
+
 func TestWarnings(t *testing.T) {
 	_, c := load(t, noDetect, "--cpu", "150%", "--memory", "150%",
 		"--cpu-limit", "1", "--memory-limit", "256Mi")

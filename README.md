@@ -23,6 +23,10 @@ own request or limit, it moves between them along a chosen curve, it reports
 what it is aiming for next to what it actually achieved, and it does all of
 that from a 7MB static image with one config file.
 
+**New to Kubernetes, or just want to try it?**
+[docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) is a copy-paste walkthrough
+that assumes no Kubernetes knowledge.
+
 - [Quick start](#quick-start)
 - [Configuring a profile](#configuring-a-profile)
 - [HTTP endpoints and metrics](#http-endpoints-and-metrics)
@@ -276,6 +280,7 @@ Details, tokens, pull secrets and troubleshooting: [docs/RELEASING.md](docs/RELE
 
 | Document | Contents |
 | --- | --- |
+| [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) | a guided first run, for someone who does not know Kubernetes |
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | every config key, flag, environment variable and the phase DSL |
 | [docs/PROFILES.md](docs/PROFILES.md) | curve gallery and ready-made scenarios |
 | [docs/METRICS.md](docs/METRICS.md) | metrics, endpoints and example PromQL |

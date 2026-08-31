@@ -108,6 +108,14 @@ func Detect(ov Overrides, detect bool) Info {
 	if ov.MemLimitBytes > 0 {
 		in.MemLimitBytes, in.Sources["memory_limit"] = ov.MemLimitBytes, "config"
 	}
+	// The weight-derived CPU request is only a hint, and an explicit limit set
+	// after detection can expose it as nonsense (a "request" above the limit).
+	// Re-check it once every source has had its say.
+	if strings.Contains(in.Sources["cpu_request"], "estimate") &&
+		in.CPULimitCores > 0 && in.CPURequestCores > in.CPULimitCores {
+		in.CPURequestCores = 0
+		delete(in.Sources, "cpu_request")
+	}
 	if in.NodeCPUCores > 0 {
 		in.Sources["node_cpu"] = "runtime.NumCPU"
 	}
