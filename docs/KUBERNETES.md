@@ -9,28 +9,35 @@
 ## Deploy
 
 The manifests in `deploy/k8s/` already point at the published image,
-`registry.gitlab.com/vkalladath/loadsim:v0.2.0`. It lives in a **private** GitLab registry, so
-create the pull secret once per namespace first:
+`registry.gitlab.com/vkalladath/loadsim:v0.2.0`, which is public - nothing to configure:
 
 ```sh
-kubectl create secret docker-registry gitlab-registry \
-  --docker-server=registry.gitlab.com \
-  --docker-username='<deploy-token-username>' \
-  --docker-password='<deploy-token>'      # read_registry scope is enough
-
 kubectl apply -k deploy/k8s
 kubectl port-forward deploy/loadsim 8080:8080
 open http://localhost:8080/
 ```
 
-The manifests reference the secret by name (`gitlab-registry`). If you would
-rather attach it to the service account, do that and delete the
-`imagePullSecrets` block:
+### If your registry is private
+
+Publishing to a private registry instead? Create a pull secret from a deploy
+token with the `read_registry` scope and uncomment the `imagePullSecrets` block
+in the Deployments and the Job:
+
+```sh
+kubectl create secret docker-registry gitlab-registry \
+  --docker-server=registry.gitlab.com \
+  --docker-username='<deploy-token-username>' \
+  --docker-password='<deploy-token>'
+```
+
+Or attach it to the service account, and leave the manifests alone:
 
 ```sh
 kubectl patch serviceaccount default \
   -p '{"imagePullSecrets":[{"name":"gitlab-registry"}]}'
 ```
+
+Pull secrets are namespaced, so this is needed once per namespace.
 
 To run your own build instead, publish it and repoint the manifests - see
 [RELEASING.md](RELEASING.md):
@@ -45,7 +52,7 @@ cd deploy/k8s && kustomize edit set image loadsim=registry.gitlab.com/vkalladath
 | File | What it is |
 | --- | --- |
 | `configmap.yaml` | the profile, mounted at `/etc/loadsim/profile.yaml` |
-| `deployment.yaml` | the full example: downward API, probes, pull secret, read-only root, non-root user |
+| `deployment.yaml` | the full example: downward API, probes, read-only root, non-root user |
 | `deployment-args-only.yaml` | the minimal version, profile passed as args |
 | `service.yaml` | ClusterIP for scraping and port-forwarding |
 | `servicemonitor.yaml` | Prometheus Operator scrape config |
@@ -163,8 +170,6 @@ for p in oversized spiky startup-burst; do
   kubectl set env deployment/loadsim-$p LOADSIM_PRESET=$p
   kubectl set resources deployment/loadsim-$p --requests=cpu=500m,memory=256Mi --limits=cpu=1,memory=512Mi
 done
-# these bypass the manifests, so the pull secret has to come from the
-# service account (see Deploy above)
 ```
 
 `oversized` should be recommended down, `spiky` should keep headroom for its

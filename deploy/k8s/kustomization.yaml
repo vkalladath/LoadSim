@@ -3,11 +3,7 @@ kind: Kustomization
 
 # kubectl apply -k deploy/k8s
 #
-# The image below lives in a private GitLab registry, so the namespace needs a
-# pull secret first (see docs/KUBERNETES.md):
-#   kubectl create secret docker-registry gitlab-registry \
-#     --docker-server=registry.gitlab.com \
-#     --docker-username='<deploy-token-username>' --docker-password='<deploy-token>'
+# The image below is public, so this needs no pull secret and no arguments.
 #
 # Point this at your own build with:
 #   kustomize edit set image loadsim=ghcr.io/you/loadsim:v0.1.0

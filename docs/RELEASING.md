@@ -1,8 +1,8 @@
 # Building and publishing the image
 
-The current published image is **`registry.gitlab.com/vkalladath/loadsim:v0.2.0`** (also tagged
-`:latest`), in a private registry: pulling it needs a token, and Kubernetes
-needs an `imagePullSecret`.
+The current published image is **`registry.gitlab.com/vkalladath/loadsim:v0.2.0`**, also tagged
+`:latest`. The registry is public, so pulling it needs no credentials and
+Kubernetes needs no pull secret. Publishing, of course, still needs a token.
 
 LoadSim ships two scripts and a GitLab pipeline. The scripts are the single
 implementation: CI calls exactly what you would call by hand, so a pipeline
@@ -191,8 +191,10 @@ tags after a week - the per-commit tags add up quickly.
 
 ## Pulling the image in Kubernetes
 
-A GitLab registry is private by default, so the cluster needs credentials.
-Create a **deploy token** with the `read_registry` scope, then:
+The image published here is public, so `deploy/k8s/` works as-is. A GitLab
+registry is private by default though, so for your own private project the
+cluster needs credentials: create a **deploy token** with the `read_registry`
+scope, then:
 
 ```sh
 kubectl create secret docker-registry gitlab-registry \
@@ -212,8 +214,7 @@ spec:
       image: registry.gitlab.com/vkalladath/loadsim:v0.2.0
 ```
 
-The manifests in `deploy/k8s/` already carry both the image and the
-`imagePullSecrets` block.
+`deploy/k8s/` carries this block, commented out, next to each container.
 
 or attach it to the service account so every pod in the namespace gets it:
 

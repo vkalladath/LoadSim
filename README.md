@@ -33,16 +33,14 @@ that from a 7MB static image with one config file.
 
 ## Quick start
 
-The published image is `registry.gitlab.com/vkalladath/loadsim:v0.2.0`. It is in a private
-registry, so log in first (any token with `read_registry`):
+The published image is `registry.gitlab.com/vkalladath/loadsim:v0.2.0` - public, so it needs
+no credentials:
 
 ```sh
-docker login registry.gitlab.com          # or: podman login
 docker pull registry.gitlab.com/vkalladath/loadsim:v0.2.0
 ```
 
-Or build it yourself - multi-stage, static, non-root, ~7MB, no credentials
-needed:
+Or build it yourself - multi-stage, static, non-root, ~7MB:
 
 ```sh
 make image                     # docker or podman, whichever is installed
@@ -97,14 +95,10 @@ CPU (cores)  peak 997m
          0 +------------------------------------------------------------
 ```
 
-On Kubernetes - the manifests already point at `v0.2.0`, and the private
-registry needs a pull secret in the namespace:
+On Kubernetes - the manifests already point at the public `v0.2.0` image, so
+there is nothing to configure:
 
 ```sh
-kubectl create secret docker-registry gitlab-registry \
-  --docker-server=registry.gitlab.com \
-  --docker-username='<deploy-token-username>' --docker-password='<deploy-token>'
-
 kubectl apply -k deploy/k8s        # ConfigMap + Deployment + Service
 kubectl port-forward deploy/loadsim 8080:8080
 ```
@@ -255,8 +249,8 @@ Two design decisions are worth knowing about:
 
 ## Publishing the image
 
-Published at `registry.gitlab.com/vkalladath/loadsim:v0.2.0` (and `:latest`). Two scripts build
-and publish the image; the GitLab pipeline calls exactly the same scripts, so
+Published (publicly) at `registry.gitlab.com/vkalladath/loadsim:v0.2.0` and `:latest`. Two
+scripts build and publish the image; the GitLab pipeline calls exactly the same scripts, so
 anything CI does can be reproduced on a laptop.
 
 ```sh
