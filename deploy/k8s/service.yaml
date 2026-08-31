@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: loadsim
+  labels:
+    app.kubernetes.io/name: loadsim
+spec:
+  selector:
+    app.kubernetes.io/name: loadsim
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

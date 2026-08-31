@@ -1,0 +1,26 @@
+# One-shot load: run the profile once and exit. hold_last=false makes the
+# process stop when the last phase ends, which is what a Job wants.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: loadsim-once
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: loadsim
+          image: loadsim:dev
+          args:
+            - --phases=ramp:5m:cpu=10%->95%@linear:mem=20%->80%@linear
+            - --hold-last=false
+            # A belt-and-braces stop, in case the profile is edited to hold.
+            - --exit-after=10m
+          resources:
+            requests:
+              cpu: 500m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi

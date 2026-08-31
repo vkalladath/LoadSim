@@ -1,0 +1,39 @@
+# A service that is expensive to start and cheap to run: the shape that makes
+# CPU requests based on steady-state usage cause slow, throttled rollouts.
+#
+#   loadsim plan   --config examples/startup-burst.yaml --cpu-limit 2 --memory-limit 1Gi
+#   loadsim        --config examples/startup-burst.yaml
+name: startup-burst
+
+# Percentages below are relative to the container's *limit*. Change to
+# "request" to write a profile in terms of requests instead.
+percent_base: limit
+
+startup:
+  # Idle for 5s before the profile begins, the way a JVM or a framework spends
+  # time on class loading before it does any real work.
+  init_delay: 5s
+  # Keep /readyz failing for the first 20s so rollout timing is realistic.
+  ready_delay: 20s
+
+phases:
+  # 1. Cold start: peg the CPU limit, decaying as caches warm up. ease-out
+  #    front-loads the decay, which is what a real warm-up looks like.
+  - name: cold-start
+    duration: 90s
+    cpu: 100% -> 30% @ease-out
+    memory: 15% -> 55% @ease-in-out
+
+  # 2. Settle: a short dip below steady state as the GC catches up.
+  - name: settle
+    duration: 30s
+    cpu: 30% -> 20% @linear
+    memory: 55%
+
+  # 3. Steady state, held forever. Omitting the duration on the *last* phase
+  #    means "hold these targets until the pod is deleted".
+  - name: steady
+    cpu: 25%
+    memory: 60%
+    # A little noise keeps the metric from being suspiciously flat.
+    jitter: 4%

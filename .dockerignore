@@ -1,0 +1,12 @@
+.git
+.gitlab-ci.yml
+scripts
+.gitignore
+.gocache
+.gomodcache
+dist
+deploy
+docs
+examples
+*.md
+Makefile

@@ -1,0 +1,39 @@
+# The smallest useful deployment: no ConfigMap, profile given as arguments.
+# Everything here can equally be an environment variable (LOADSIM_PRESET,
+# LOADSIM_PHASES, LOADSIM_CPU, ...), which is convenient with Helm values.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loadsim-simple
+  labels:
+    app.kubernetes.io/name: loadsim-simple
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: loadsim-simple
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: loadsim-simple
+    spec:
+      containers:
+        - name: loadsim
+          image: loadsim:dev
+          args:
+            # 60% of the CPU limit and 70% of the memory limit, forever.
+            - --cpu=60%
+            - --memory=70%
+            # Or an inline multi-phase profile:
+            # - --phases=burst:90s:cpu=100%:mem=80%;steady:cpu=25%:mem=60%
+          resources:
+            requests:
+              cpu: 200m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080

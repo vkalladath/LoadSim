@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loadsim-profile
+  labels:
+    app.kubernetes.io/name: loadsim
+data:
+  # Mounted at /etc/loadsim/profile.yaml and selected with --config.
+  # Editing this ConfigMap does not restart the pods: roll the Deployment
+  # (kubectl rollout restart deploy/loadsim) to pick up a new profile.
+  profile.yaml: |
+    name: startup-burst
+    percent_base: limit
+
+    startup:
+      ready_delay: 20s
+
+    phases:
+      - name: cold-start
+        duration: 90s
+        cpu: 100% -> 30% @ease-out
+        memory: 15% -> 55% @ease-in-out
+      - name: steady
+        cpu: 25%
+        memory: 60%
+        jitter: 4%

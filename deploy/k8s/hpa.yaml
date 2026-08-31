@@ -1,0 +1,24 @@
+# Drives the Horizontal Pod Autoscaler with a known load shape: the sawtooth
+# preset crosses the 60% target twice per cycle, so scale-up and scale-down
+# behaviour (and the stabilisation windows) are easy to observe.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: loadsim
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: loadsim
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 60

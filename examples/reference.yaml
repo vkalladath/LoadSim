@@ -1,0 +1,99 @@
+# Complete LoadSim configuration reference. Every key is optional; the value
+# shown is the default unless noted otherwise. Copy this file and delete what
+# you do not need.
+#
+# Precedence, lowest to highest:
+#   defaults < --preset < this file < LOADSIM_CONFIG_YAML < environment < flags
+
+# --- identity -----------------------------------------------------------------
+name: reference                  # shown in logs, /status and loadsim_info
+description: "Every option, documented."
+
+# --- HTTP surface -------------------------------------------------------------
+listen: ":8080"                  # "off" disables the HTTP server entirely
+metrics_path: /metrics
+pprof: false                     # expose /debug/pprof
+
+# --- profile behaviour --------------------------------------------------------
+loop: false                      # restart the profile when it ends
+hold_last: true                  # hold the last phase forever; false = exit
+jitter: "0%"                     # default noise per sample, e.g. "5%"
+seed: 0                          # fix for reproducible jitter/random curves
+percent_base: limit              # what a bare "%" means: limit | request | node
+exit_after: 0                    # e.g. "30m": stop the process after this long
+
+# --- what the percentages resolve against -------------------------------------
+resources:
+  detect: true                   # read the downward API env vars and the cgroup
+  cpu:
+    request: ""                  # e.g. "500m"; overrides detection
+    limit: ""                    # e.g. "2"
+  memory:
+    request: ""                  # e.g. "256Mi"
+    limit: ""                    # e.g. "1Gi"
+
+# --- simulated startup --------------------------------------------------------
+startup:
+  init_delay: 0                  # idle before the profile clock starts
+  ready_delay: 0                 # keep /readyz failing this long after start
+
+# --- logging ------------------------------------------------------------------
+logging:
+  interval: 15s                  # status line interval; 0 is quiet
+  format: text                   # text | json
+
+# --- load engine tuning (the defaults are good) -------------------------------
+engine:
+  cpu:
+    workers: 0                   # 0 = sized from the profile's peak target
+    slice: 50ms                  # duty-cycle period per worker
+    control_interval: 500ms      # how often measured usage is compared
+    feedback: true               # correct the duty cycle from real CPU usage
+    gain: 0.5                    # correction strength per control tick
+    work: int                    # instruction mix: int | float | sqrt
+    stagger: true                # spread worker duty cycles across the slice
+    max_procs: 0                 # override GOMAXPROCS
+  memory:
+    chunk_size: 4Mi              # allocation granularity
+    interval: 200ms              # reconcile interval
+    max_step: ""                 # e.g. "64Mi": cap growth per reconcile tick
+    touch_interval: 0            # re-touch every held page this often
+    release_interval: 2s         # min interval between returning pages to the OS
+    fill: random                 # random (incompressible) | zero
+    soft_limit: true             # tell the Go GC about the memory limit
+    soft_limit_fraction: 0.9     # soft limit = fraction * memory limit
+    compensate: true             # targets mean total RSS, not just held bytes
+
+# --- the profile itself -------------------------------------------------------
+# Either the single-phase shorthand:
+#   cpu: 50%
+#   memory: 50%
+# or a list of phases. Only the last phase may omit its duration.
+phases:
+  - name: ramp
+    duration: 2m
+    # Scalar shorthand: "<from> -> <to> @<curve>[/<period>][^<exponent>]"
+    cpu: 10% -> 90% @ease-in-out
+    # Mapping form, with everything spelled out:
+    memory:
+      from: 64Mi
+      to: 512Mi
+      curve: linear              # see docs/PROFILES.md for the full list
+      exponent: 0                # tunes ease-in/ease-out/exp/log sharpness
+      period: 0                  # oscillation period for periodic curves
+      duty: 0                    # high fraction per period, for "square"
+      jitter: "2%"               # overrides the profile-wide jitter
+
+  - name: wave
+    duration: 10m
+    repeat: 1                    # expand this phase into N consecutive copies
+    cpu:
+      from: 20%
+      to: 80%
+      curve: sine
+      period: 2m
+    memory: 400Mi
+
+  - name: steady                 # no duration: holds until the pod is deleted
+    cpu: 30%
+    memory: 400Mi

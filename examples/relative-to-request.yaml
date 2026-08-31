@@ -1,0 +1,29 @@
+# Right-sizing test case: a workload that is comfortably over-provisioned.
+# Targets are a percentage of the container's *request*, so the same profile
+# stays meaningful after a recommender changes the request.
+#
+# Deploy two copies of this with different requests and the recommendation for
+# each should converge on roughly (request * the percentages below).
+name: oversized-workload
+percent_base: request
+
+phases:
+  - name: warm-up
+    duration: 2m
+    cpu: 5% -> 20% @ease-in-out
+    memory: 10% -> 35% @linear
+
+  - name: business-hours
+    duration: 30m
+    cpu:
+      from: 12%
+      to: 30%
+      curve: sine       # smooth demand curve
+      period: 10m
+      jitter: 8%        # per-sample noise, so percentiles are interesting
+    memory: 35%
+
+  - name: overnight
+    duration: 10m
+    cpu: 4%
+    memory: 30%

@@ -1,0 +1,28 @@
+# Bursty traffic: a low baseline with short, tall spikes. Useful for checking
+# that a sizing recommendation uses a high percentile rather than the mean, and
+# that spikes survive the scrape interval.
+name: spiky
+percent_base: limit
+loop: true
+
+phases:
+  - name: spikes
+    duration: 20m
+    cpu:
+      from: 12%       # baseline between spikes
+      to: 95%         # spike height
+      curve: square
+      period: 2m      # one spike every two minutes
+      duty: 0.08      # each spike lasts 8% of the period (~10s)
+    memory:
+      from: 40%
+      to: 65%         # allocation burst during the spike
+      curve: square
+      period: 2m
+      duty: 0.08
+
+engine:
+  memory:
+    # Follow the spikes closely instead of amortising them.
+    interval: 100ms
+    release_interval: 1s

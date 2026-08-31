@@ -1,0 +1,18 @@
+# Requires the Prometheus Operator CRDs. Skip this file if you scrape with
+# annotations instead (see deployment.yaml).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: loadsim
+  labels:
+    app.kubernetes.io/name: loadsim
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: loadsim
+  endpoints:
+    - port: http
+      path: /metrics
+      # A short interval is worth it here: the point is usually to compare
+      # LoadSim's own view of the target with what the pipeline reports.
+      interval: 15s

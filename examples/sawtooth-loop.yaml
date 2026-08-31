@@ -1,0 +1,27 @@
+# Repeating load, for checking how a metrics pipeline handles a shape that
+# changes faster than its scrape interval.
+#
+# One pass is 20 minutes and the profile loops forever. Every phase needs a
+# duration when loop is true.
+name: sawtooth-loop
+percent_base: limit
+loop: true
+
+phases:
+  - name: ramp-cycles
+    duration: 15m
+    cpu:
+      from: 10%
+      to: 90%
+      curve: sawtooth   # linear climb, instant drop
+      period: 5m        # three cycles inside this phase
+    memory:
+      from: 30%
+      to: 70%
+      curve: triangle   # climb then fall, no discontinuity
+      period: 5m
+
+  - name: quiet
+    duration: 5m
+    cpu: 5%
+    memory: 30%

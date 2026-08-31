@@ -1,0 +1,114 @@
+# LoadSim pipeline: test, then build and publish the image to this project's
+# GitLab Container Registry.
+#
+# Nothing needs configuring: CI_REGISTRY_IMAGE, CI_REGISTRY_USER and
+# CI_REGISTRY_PASSWORD are provided by GitLab, and the scripts under scripts/
+# pick them up on their own. The same scripts run locally, so a pipeline failure
+# can always be reproduced on a laptop.
+#
+# Images produced:
+#   merge request       built only, never pushed
+#   feature branch      :<branch-slug>  :<short-sha>
+#   default branch      :latest  :<short-sha>            (linux/amd64 + linux/arm64)
+#   git tag vX.Y.Z      :vX.Y.Z  :latest                 (linux/amd64 + linux/arm64)
+
+stages:
+  - test
+  - build
+
+variables:
+  GO_VERSION: "1.25"
+  DOCKER_VERSION: "27"
+  # dind talks TLS to the client over the shared certificate directory.
+  DOCKER_TLS_CERTDIR: "/certs"
+  PLATFORMS: "linux/amd64,linux/arm64"
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH
+
+# --- test ---------------------------------------------------------------------
+
+test:
+  stage: test
+  image: golang:${GO_VERSION}-alpine
+  variables:
+    GOMODCACHE: ${CI_PROJECT_DIR}/.gomodcache
+    GOCACHE: ${CI_PROJECT_DIR}/.gocache
+  cache:
+    key: go-${GO_VERSION}
+    paths:
+      - .gomodcache
+      - .gocache
+  script:
+    - test -z "$(gofmt -l .)" || { echo "gofmt found unformatted files:"; gofmt -l .; exit 1; }
+    - go vet ./...
+    # -short skips the timing-sensitive engine tests, which are unreliable on
+    # noisy shared runners. Drop it on a dedicated runner.
+    - go test -short ./...
+
+# The full suite, including the CPU accuracy and RSS convergence tests. Manual,
+# because a busy shared runner will produce false failures.
+test:timing:
+  extends: test
+  script:
+    - go test ./...
+  allow_failure: true
+  when: manual
+
+# --- image --------------------------------------------------------------------
+
+.image:
+  stage: build
+  image: docker:${DOCKER_VERSION}
+  services:
+    - docker:${DOCKER_VERSION}-dind
+  variables:
+    # The scripts need bash; the docker image is busybox-based.
+    EXTRA_PACKAGES: "bash git"
+  before_script:
+    - apk add --no-cache $EXTRA_PACKAGES
+    - docker info >/dev/null
+  script:
+    - bash scripts/build-image.sh $BUILD_FLAGS
+  after_script:
+    - docker logout "$CI_REGISTRY" || true
+
+# Merge requests: prove the image still builds, push nothing.
+image:merge-request:
+  extends: .image
+  variables:
+    BUILD_FLAGS: "--tag mr-$CI_MERGE_REQUEST_IID"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+# Feature branches: a per-branch tag and an immutable per-commit tag.
+image:branch:
+  extends: .image
+  variables:
+    BUILD_FLAGS: "--tag $CI_COMMIT_REF_SLUG --sha --push"
+  rules:
+    - if: $CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH
+
+# Default branch: multi-arch :latest plus the commit tag.
+image:default-branch:
+  extends: .image
+  variables:
+    BUILD_FLAGS: "--tag latest --sha --platforms $PLATFORMS --push"
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# Release tags: multi-arch :vX.Y.Z and :latest, then a smoke test of the
+# artifact that was actually published.
+image:release:
+  extends: .image
+  variables:
+    BUILD_FLAGS: "--tag $CI_COMMIT_TAG --latest --platforms $PLATFORMS --push"
+  script:
+    - bash scripts/build-image.sh $BUILD_FLAGS
+    - docker run --rm "$CI_REGISTRY_IMAGE:$CI_COMMIT_TAG" version
+    - docker run --rm "$CI_REGISTRY_IMAGE:$CI_COMMIT_TAG" plan --preset steady --cpu-limit 1 --memory-limit 512Mi
+  rules:
+    - if: $CI_COMMIT_TAG
