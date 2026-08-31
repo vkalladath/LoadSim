@@ -79,6 +79,17 @@ export DRY_RUN="${DRY_RUN:-0}"
 
 cd "$(repo_root)"
 
+# An explicit --tag names the release, so it becomes the version label too
+# unless VERSION or a CI tag says otherwise. Without this, "--tag v0.2.0" would
+# publish an image labelled with a bare commit description.
+if [ -z "${VERSION:-}" ] && [ -z "${CI_COMMIT_TAG:-}" ]; then
+  for t in "${TAGS[@]}"; do
+    [ "$t" = "latest" ] && continue
+    VERSION="$t"
+    break
+  done
+fi
+
 TOOL=$(container_tool)
 VERSION=$(resolve_version)
 REVISION=$(resolve_revision)

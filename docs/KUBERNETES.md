@@ -8,14 +8,36 @@
 
 ## Deploy
 
+The manifests in `deploy/k8s/` already point at the published image,
+`registry.gitlab.com/vkalladath/loadsim:v0.2.0`. It lives in a **private** GitLab registry, so
+create the pull secret once per namespace first:
+
 ```sh
-make image                                   # build loadsim:dev
-# push it somewhere your cluster can pull from - see RELEASING.md:
-#   GITLAB_PROJECT=my-group/loadsim scripts/build-image.sh --tag v0.1.0 --push
-# then point the manifests at it and apply:
+kubectl create secret docker-registry gitlab-registry \
+  --docker-server=registry.gitlab.com \
+  --docker-username='<deploy-token-username>' \
+  --docker-password='<deploy-token>'      # read_registry scope is enough
+
 kubectl apply -k deploy/k8s
 kubectl port-forward deploy/loadsim 8080:8080
 open http://localhost:8080/
+```
+
+The manifests reference the secret by name (`gitlab-registry`). If you would
+rather attach it to the service account, do that and delete the
+`imagePullSecrets` block:
+
+```sh
+kubectl patch serviceaccount default \
+  -p '{"imagePullSecrets":[{"name":"gitlab-registry"}]}'
+```
+
+To run your own build instead, publish it and repoint the manifests - see
+[RELEASING.md](RELEASING.md):
+
+```sh
+GITLAB_PROJECT=vkalladath/loadsim scripts/build-image.sh --tag v0.3.0 --push
+cd deploy/k8s && kustomize edit set image loadsim=registry.gitlab.com/vkalladath/loadsim:v0.3.0
 ```
 
 `deploy/k8s/` contains:
@@ -23,13 +45,13 @@ open http://localhost:8080/
 | File | What it is |
 | --- | --- |
 | `configmap.yaml` | the profile, mounted at `/etc/loadsim/profile.yaml` |
-| `deployment.yaml` | the full example: downward API, probes, read-only root, non-root user |
+| `deployment.yaml` | the full example: downward API, probes, pull secret, read-only root, non-root user |
 | `deployment-args-only.yaml` | the minimal version, profile passed as args |
 | `service.yaml` | ClusterIP for scraping and port-forwarding |
 | `servicemonitor.yaml` | Prometheus Operator scrape config |
 | `hpa.yaml` | an HPA targeting 60% CPU utilisation |
 | `job.yaml` | run the profile once and exit |
-| `kustomization.yaml` | ties the first three together |
+| `kustomization.yaml` | ties the first three together, and sets the image to `v0.2.0` |
 
 The container needs no privileges: no root, no capabilities, read-only root
 filesystem, and it only ever *reads* `/proc/self` and `/sys/fs/cgroup`.
@@ -137,10 +159,12 @@ recommendation against the profile you asked for:
 
 ```sh
 for p in oversized spiky startup-burst; do
-  kubectl create deployment loadsim-$p --image loadsim:dev
+  kubectl create deployment loadsim-$p --image registry.gitlab.com/vkalladath/loadsim:v0.2.0
   kubectl set env deployment/loadsim-$p LOADSIM_PRESET=$p
   kubectl set resources deployment/loadsim-$p --requests=cpu=500m,memory=256Mi --limits=cpu=1,memory=512Mi
 done
+# these bypass the manifests, so the pull secret has to come from the
+# service account (see Deploy above)
 ```
 
 `oversized` should be recommended down, `spiky` should keep headroom for its

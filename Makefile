@@ -4,10 +4,14 @@
 # (test-container, build-container) that runs the toolchain in an image.
 
 BINARY      ?= loadsim
+# Local build: "make image" produces $(IMAGE):$(TAG) with no registry involved.
 IMAGE       ?= loadsim
 TAG         ?= dev
-# Where images are published. Either set GITLAB_PROJECT=group/project (with
-# REGISTRY, default registry.gitlab.com) or IMAGE_REPO for the full path.
+# Publishing: where "make image-push" and friends send the image.
+RELEASE_REPO ?= registry.gitlab.com/vkalladath/loadsim
+RELEASE_TAG  ?= v0.2.0
+# Overrides honoured by the scripts; set GITLAB_PROJECT=group/project (with
+# REGISTRY, default registry.gitlab.com) or IMAGE_REPO for a full path.
 GITLAB_PROJECT ?=
 IMAGE_REPO  ?=
 export GITLAB_PROJECT IMAGE_REPO VERSION
@@ -62,20 +66,21 @@ image-shell: ## Build the image on alpine, so it has a shell for debugging
 	scripts/build-image.sh --tag $(TAG)-shell --shell
 
 .PHONY: image-push
-image-push: ## Build and push to the registry (set GITLAB_PROJECT or IMAGE_REPO)
-	scripts/build-image.sh --tag $(TAG) --push
+image-push: ## Build and push $(RELEASE_REPO):$(RELEASE_TAG)
+	IMAGE_REPO=$(RELEASE_REPO) scripts/build-image.sh --tag $(RELEASE_TAG) --push
 
 .PHONY: image-release
-image-release: ## Build and push a multi-arch release (TAG plus latest)
-	scripts/build-image.sh --tag $(TAG) --latest --platforms $(PLATFORMS) --push
+image-release: ## Build and push a multi-arch release, plus :latest
+	IMAGE_REPO=$(RELEASE_REPO) scripts/build-image.sh \
+		--tag $(RELEASE_TAG) --latest --platforms $(PLATFORMS) --push
 
 .PHONY: push
-push: ## Push already-built tags (set GITLAB_PROJECT or IMAGE_REPO)
-	scripts/push-image.sh --tag $(TAG)
+push: ## Push already-built tags to $(RELEASE_REPO)
+	IMAGE_REPO=$(RELEASE_REPO) scripts/push-image.sh --tag $(RELEASE_TAG)
 
 .PHONY: image-plan
 image-plan: ## Show what a build and push would do, without doing it
-	scripts/build-image.sh --tag $(TAG) --push --dry-run
+	IMAGE_REPO=$(RELEASE_REPO) scripts/build-image.sh --tag $(RELEASE_TAG) --push --dry-run
 
 .PHONY: run
 run: build ## Run locally with a constant 25% of one core and 128Mi

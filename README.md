@@ -33,18 +33,27 @@ that from a 7MB static image with one config file.
 
 ## Quick start
 
-Build the image (multi-stage, static, non-root, ~7MB):
+The published image is `registry.gitlab.com/vkalladath/loadsim:v0.2.0`. It is in a private
+registry, so log in first (any token with `read_registry`):
+
+```sh
+docker login registry.gitlab.com          # or: podman login
+docker pull registry.gitlab.com/vkalladath/loadsim:v0.2.0
+```
+
+Or build it yourself - multi-stage, static, non-root, ~7MB, no credentials
+needed:
 
 ```sh
 make image                     # docker or podman, whichever is installed
 # or: docker build -t loadsim:dev .
 ```
 
-Run it locally with pod-like limits and watch it hold 50% of them:
+Run it with pod-like limits and watch it hold 50% of them:
 
 ```sh
 docker run --rm -p 8080:8080 --cpus 1 --memory 512m \
-  loadsim:dev --cpu 50% --memory 50%
+  registry.gitlab.com/vkalladath/loadsim:v0.2.0 --cpu 50% --memory 50%
 
 curl -s localhost:8080/           # human readable status + the profile chart
 curl -s localhost:8080/metrics    # Prometheus exposition
@@ -88,9 +97,14 @@ CPU (cores)  peak 997m
          0 +------------------------------------------------------------
 ```
 
-On Kubernetes:
+On Kubernetes - the manifests already point at `v0.2.0`, and the private
+registry needs a pull secret in the namespace:
 
 ```sh
+kubectl create secret docker-registry gitlab-registry \
+  --docker-server=registry.gitlab.com \
+  --docker-username='<deploy-token-username>' --docker-password='<deploy-token>'
+
 kubectl apply -k deploy/k8s        # ConfigMap + Deployment + Service
 kubectl port-forward deploy/loadsim 8080:8080
 ```
@@ -241,18 +255,19 @@ Two design decisions are worth knowing about:
 
 ## Publishing the image
 
-Two scripts build and publish the image; the GitLab pipeline calls exactly the
-same scripts, so anything CI does can be reproduced on a laptop.
+Published at `registry.gitlab.com/vkalladath/loadsim:v0.2.0` (and `:latest`). Two scripts build
+and publish the image; the GitLab pipeline calls exactly the same scripts, so
+anything CI does can be reproduced on a laptop.
 
 ```sh
 scripts/build-image.sh                       # local image, tagged from git
 scripts/build-image.sh --push --dry-run      # show what a publish would do
 
-GITLAB_PROJECT=my-group/loadsim GITLAB_USER=me GITLAB_TOKEN=glpat-xxxx \
-  scripts/build-image.sh --tag v0.2.0 --latest --push
+GITLAB_PROJECT=vkalladath/loadsim GITLAB_USER=me GITLAB_TOKEN=glpat-xxxx \
+  scripts/build-image.sh --tag v0.3.0 --latest --push
 
 # multi-arch: cross-compiled, so no qemu is needed
-scripts/build-image.sh --tag v0.2.0 --platforms linux/amd64,linux/arm64 --push
+scripts/build-image.sh --tag v0.3.0 --platforms linux/amd64,linux/arm64 --push
 ```
 
 `.gitlab-ci.yml` tests, then builds and pushes to the project's own registry:
@@ -284,7 +299,7 @@ No local Go toolchain is required - every target has a containerised twin.
 make check            # gofmt, go vet, go test (needs local Go)
 make test-container   # the same, inside a golang image
 make image            # build the container image
-make image-push       # build and push (GITLAB_PROJECT=group/project)
+make image-push       # build and push to registry.gitlab.com/vkalladath/loadsim
 make run-image        # run it with a 1 CPU / 512Mi limit
 make plan PROFILE=examples/spiky.yaml
 ```

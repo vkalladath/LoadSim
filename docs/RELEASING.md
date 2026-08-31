@@ -1,5 +1,9 @@
 # Building and publishing the image
 
+The current published image is **`registry.gitlab.com/vkalladath/loadsim:v0.2.0`** (also tagged
+`:latest`), in a private registry: pulling it needs a token, and Kubernetes
+needs an `imagePullSecret`.
+
 LoadSim ships two scripts and a GitLab pipeline. The scripts are the single
 implementation: CI calls exactly what you would call by hand, so a pipeline
 failure is always reproducible locally.
@@ -31,12 +35,12 @@ scripts/build-image.sh
 scripts/build-image.sh --push --dry-run
 
 # publish one tag to GitLab
-GITLAB_PROJECT=my-group/loadsim GITLAB_USER=me GITLAB_TOKEN=glpat-xxxx \
+GITLAB_PROJECT=vkalladath/loadsim GITLAB_USER=me GITLAB_TOKEN=glpat-xxxx \
   scripts/build-image.sh --tag v0.2.0 --latest --push
 
-# publish a multi-arch release
-GITLAB_PROJECT=my-group/loadsim scripts/build-image.sh \
-  --tag v0.2.0 --latest --platforms linux/amd64,linux/arm64 --push
+# publish a multi-arch release (the published v0.2.0 is amd64 only)
+GITLAB_PROJECT=vkalladath/loadsim scripts/build-image.sh \
+  --tag v0.3.0 --latest --platforms linux/amd64,linux/arm64 --push
 
 # push tags that are already built
 scripts/push-image.sh --tag v0.2.0 --tag latest
@@ -45,11 +49,14 @@ scripts/push-image.sh --tag v0.2.0 --tag latest
 Or through make, which passes `GITLAB_PROJECT` / `IMAGE_REPO` straight through:
 
 ```sh
-make image                                   # local build
-make image-plan  GITLAB_PROJECT=g/loadsim    # dry run of a publish
-make image-push  GITLAB_PROJECT=g/loadsim TAG=v0.2.0
-make image-release GITLAB_PROJECT=g/loadsim TAG=v0.2.0   # multi-arch + latest
+make image                   # local build, tagged loadsim:dev
+make image-plan              # dry run of a publish to registry.gitlab.com/vkalladath/loadsim
+make image-push  RELEASE_TAG=v0.3.0
+make image-release RELEASE_TAG=v0.3.0    # multi-arch, plus :latest
 ```
+
+`RELEASE_REPO` defaults to `registry.gitlab.com/vkalladath/loadsim` and `RELEASE_TAG` to
+`v0.2.0`; override either on the command line.
 
 ## Naming and tags
 
@@ -77,12 +84,12 @@ are sanitised to what a registry accepts (`/` and other stray characters become
 Every image carries provenance labels, so a running pod can be traced back:
 
 ```console
-$ docker inspect --format '{{json .Config.Labels}}' registry.gitlab.com/g/loadsim:v0.2.0
+$ skopeo inspect docker://registry.gitlab.com/vkalladath/loadsim:v0.2.0 --format '{{.Labels}}'
 {
   "org.opencontainers.image.version": "v0.2.0",
-  "org.opencontainers.image.revision": "9f3c1a...",
-  "org.opencontainers.image.source": "https://gitlab.com/g/loadsim",
-  "org.opencontainers.image.created": "2026-08-29T05:00:35Z"
+  "org.opencontainers.image.revision": "57bd19ccc48c56fc01132a3e388e9c20f1ca2384",
+  "org.opencontainers.image.source": "https://github.com/vkalladath/LoadSim.git",
+  "org.opencontainers.image.created": "2026-08-31T06:28:59Z"
 }
 ```
 
@@ -97,7 +104,7 @@ You need a token with the `write_registry` scope. Any of these work:
 | Group deploy token | Group → Settings → Repository → Deploy tokens | the deploy token's username |
 
 ```sh
-export GITLAB_PROJECT=my-group/loadsim     # or IMAGE_REPO for a self-hosted host
+export GITLAB_PROJECT=vkalladath/loadsim   # or IMAGE_REPO for a self-hosted host
 export GITLAB_USER=me
 export GITLAB_TOKEN=glpat-xxxxxxxxxxxx     # never commit this
 scripts/build-image.sh --tag v0.2.0 --latest --push
@@ -202,8 +209,11 @@ spec:
     - name: gitlab-registry
   containers:
     - name: loadsim
-      image: registry.gitlab.com/my-group/loadsim:v0.2.0
+      image: registry.gitlab.com/vkalladath/loadsim:v0.2.0
 ```
+
+The manifests in `deploy/k8s/` already carry both the image and the
+`imagePullSecrets` block.
 
 or attach it to the service account so every pod in the namespace gets it:
 
@@ -216,7 +226,7 @@ Point the example manifests at your image:
 
 ```sh
 cd deploy/k8s
-kustomize edit set image loadsim=registry.gitlab.com/my-group/loadsim:v0.2.0
+kustomize edit set image loadsim=registry.gitlab.com/vkalladath/loadsim:v0.3.0   # only to change it
 kubectl apply -k .
 ```
 

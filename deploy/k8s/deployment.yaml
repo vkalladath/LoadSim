@@ -20,9 +20,17 @@ spec:
         prometheus.io/port: "8080"
         prometheus.io/path: "/metrics"
     spec:
+      # The image is in a private GitLab registry. Create the secret once per
+      # namespace, or attach it to the service account and delete this block:
+      #   kubectl create secret docker-registry gitlab-registry \
+      #     --docker-server=registry.gitlab.com \
+      #     --docker-username='<deploy-token-username>' \
+      #     --docker-password='<deploy-token>'
+      imagePullSecrets:
+        - name: gitlab-registry
       containers:
         - name: loadsim
-          image: loadsim:dev
+          image: registry.gitlab.com/vkalladath/loadsim:v0.2.0
           imagePullPolicy: IfNotPresent
           args:
             - --config=/etc/loadsim/profile.yaml
