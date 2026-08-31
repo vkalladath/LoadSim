@@ -33,7 +33,9 @@ phases:
   # 3. Steady state, held forever. Omitting the duration on the *last* phase
   #    means "hold these targets until the pod is deleted".
   - name: steady
-    cpu: 25%
+    # A little noise keeps the metric from being suspiciously flat. Keep it on
+    # the CPU target: a wobbling memory target just churns the allocator.
+    cpu:
+      to: 25%
+      jitter: "4%"
     memory: 60%
-    # A little noise keeps the metric from being suspiciously flat.
-    jitter: 4%

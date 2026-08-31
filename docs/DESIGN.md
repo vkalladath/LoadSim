@@ -77,9 +77,18 @@ frequency scaling and SMT contention.
 ## The memory engine
 
 **Chunks, faulted in.** Memory is held as a list of equally sized chunks (4Mi
-by default). Growing appends chunks and writes every page; shrinking drops
-chunks and, at most every `release_interval`, calls `debug.FreeOSMemory()` so
-the pages actually return to the OS and RSS follows the target back down.
+by default). Growing appends chunks and writes every page; shrinking drops them.
+
+**Releasing costs CPU, so it is rationed.** Returning pages to the OS means
+`debug.FreeOSMemory()`, a stop-the-world collection. Calling it on every small
+shrink stalls the CPU workers badly enough that the process misses its CPU
+target - measured at -10% with 4% jitter on a memory target, because the jitter
+made the engine shrink and release continuously. So a forced release now needs
+two things: held memory must have fallen at least `release_threshold` (32Mi by
+default) below its *high-water mark*, and `release_interval` (2s) must have
+passed. Measuring against the high-water mark rather than summing every shrink
+is what makes an oscillating target free, while a genuine ramp down still
+releases promptly.
 
 **Pseudo-random fill.** Chunks are filled with a cheap xorshift stream. Zeroed
 pages are attractive to page deduplication, zswap/zram compression and balloon
@@ -132,6 +141,10 @@ Measured in a 1-CPU, 512Mi container on an otherwise idle 16-core host:
 | 1.5 cores against a 1-core limit | 1.003 cores, throttling accumulates, `saturated=1` |
 | 256Mi memory | 257.2Mi RSS |
 | Ramp of 100Mi/s | tracks within one chunk (4Mi) |
+| 250m CPU alongside a steady 300Mi memory load | -0.8% |
+| 250m CPU with 4% jitter on the CPU target | -0.5% |
+| 250m CPU with 4% jitter on *both* targets | -2.8% (was -10% before releases were rationed) |
+| 400Mi -> 100Mi memory ramp down | -0.1% CPU error, RSS follows within a chunk |
 
 Known limits:
 
@@ -140,6 +153,10 @@ Known limits:
 - **Fast ramps.** During a steep ramp the CPU control loop lags by up to one
   control interval, so a target that halves in 500ms will overshoot briefly.
   Lower `control_interval` (and `slice`) if that matters.
+- **Jitter on a memory target costs a little CPU accuracy** (about 3%): the
+  allocator churns, and the resulting garbage collection is time the CPU workers
+  do not get. Prefer putting jitter on the CPU target, where it is free and
+  where real workloads show it anyway.
 - **Small targets.** Below about 20m the `getrusage` resolution and the Go
   runtime's own housekeeping dominate; the feedback loop deliberately ignores
   samples that small.

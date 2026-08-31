@@ -123,6 +123,43 @@ func TestCompensationMakesRSSMatchTheTarget(t *testing.T) {
 	}
 }
 
+// An oscillating target must never trigger a forced release: it is a
+// stop-the-world collection, and repeating it costs the process its CPU target
+// (measured at roughly -10% before this was added).
+func TestOscillationDoesNotForceRelease(t *testing.T) {
+	const chunk = 1 << 20
+	e := New(Options{
+		ChunkSize:             chunk,
+		Interval:              time.Hour, // drive reconcile by hand
+		ReleaseThresholdBytes: 32 << 20,
+	})
+	step := func(target int) bool {
+		e.SetTarget(float64(target))
+		e.reconcile()
+		return e.releaseDue()
+	}
+
+	if step(300 * chunk) {
+		t.Fatal("growing should not ask for a release")
+	}
+	// Jitter of a few percent, up and down, many times over.
+	for i := 0; i < 20; i++ {
+		for _, target := range []int{288, 312, 295, 306, 291} {
+			if step(target * chunk) {
+				t.Fatalf("a +/-12Mi wobble around 300Mi asked for a release (cycle %d)", i)
+			}
+		}
+	}
+	// A genuine ramp down does ask, and clears the high-water mark afterwards.
+	if !step(200 * chunk) {
+		t.Error("a 100Mi drop should ask for a release")
+	}
+	e.peakHeld.Store(e.held.Load()) // what Run does after releasing
+	if step(199 * chunk) {
+		t.Error("a 1Mi drop after a release should not ask for another")
+	}
+}
+
 func TestTouchPasses(t *testing.T) {
 	const chunk = 1 << 20
 	e := New(Options{

@@ -1,283 +1,58 @@
-# Getting started with LoadSim
+# Getting started with LoadSim on Kubernetes
 
 LoadSim is a small program that **pretends to be a busy application**. You tell
 it how much CPU and memory to use, and it uses exactly that much - steadily, in
-bursts, ramping up, whatever you ask for.
+bursts, climbing, whatever you ask for.
 
-That is useful when you want to test the *things that watch* applications -
-monitoring dashboards, alerts, capacity reports, autoscaling - without having to
-find a real application that misbehaves in the way you need.
+That is useful when you want to test the *things that watch* pods - monitoring
+dashboards, alerts, capacity reports, autoscaling, right-sizing advice - without
+having to find a real application that misbehaves in the way you need.
 
-This page assumes you can copy and paste commands into a terminal. It assumes
-**no Kubernetes knowledge**; the Kubernetes part at the end is optional.
+This page assumes you can copy and paste commands, and that you have a cluster
+you can create things in. It assumes **no Kubernetes experience**; the terms you
+need are explained as they come up.
 
-- [What you need](#what-you-need)
-- [Is this safe to run?](#is-this-safe-to-run)
-- [1. Run it](#1-run-it)
+- [Before you start](#before-you-start)
+- [1. Deploy it](#1-deploy-it)
 - [2. See what it is doing](#2-see-what-it-is-doing)
 - [3. Change the load](#3-change-the-load)
-- [4. Optional: run it in Kubernetes](#4-optional-run-it-in-kubernetes)
+- [4. High memory usage](#4-high-memory-usage)
+- [5. Clean up](#5-clean-up)
+- [Optional: run it on your laptop instead](#optional-run-it-on-your-laptop-instead)
 - [When something looks wrong](#when-something-looks-wrong)
 - [Where to go next](#where-to-go-next)
 
-## What you need
+## Before you start
 
-Docker or Podman. Check which one you have:
+You need `kubectl` and a cluster. Nothing has to be built or downloaded: the
+image is published and public.
 
-```sh
-docker --version    # or: podman --version
-```
-
-If you have Podman rather than Docker, every command below works if you type
-`podman` where it says `docker`. Nothing else needs installing - LoadSim is a
-single self-contained image, about 7 MB.
-
-## Is this safe to run?
-
-Yes, with one thing to keep in mind.
-
-- It burns CPU and fills memory **inside its own container**, up to the budget
-  you give it on the command line. Nothing outside that container is touched.
-- It makes no network connections, reads nothing from your machine, and writes
-  no files.
-- It stops the moment you press `Ctrl-C`.
-
-The thing to keep in mind: if you give it a large budget (say 8 CPUs) your
-machine will genuinely be busy while it runs. The examples below use one CPU
-core and 512 MB, which you will not notice.
-
-## 1. Run it
-
-```sh
-docker run --rm -p 8080:8080 --cpus 1 --memory 512m \
-  registry.gitlab.com/vkalladath/loadsim:v0.2.0 --cpu 50% --memory 50%
-```
-
-What each part does:
-
-| Part | Meaning |
-| --- | --- |
-| `--cpus 1 --memory 512m` | the **budget**: this container may use 1 CPU core and 512 MB of memory |
-| `--cpu 50% --memory 50%` | what LoadSim should actually use: half of that budget |
-| `-p 8080:8080` | lets you view its status page at `http://localhost:8080` |
-| `--rm` | delete the container when it stops |
-
-The first two lines are the important idea: **percentages are relative to the
-budget the container was given.** `--cpu 50%` with a 1 CPU budget means half a
-core. The same command in a container with a 4 CPU budget would use two cores.
-You never have to recalculate anything.
-
-You should see something like this (timestamps trimmed here to keep the
-lines short):
-
-```
-INFO  loadsim 57bd19c starting (go1.25.14 linux/amd64, GOMAXPROCS=16)
-INFO  configuration chain=defaults -> overrides:cpu,memory one_pass=0s percent_base=limit phases=1 profile=loadsim
-INFO  resolved resources cpu_request=0m cpu_limit=1.000 memory_request=0B memory_limit=512.0Mi sources=cpu_limit=cgroup:cpu.max memory_limit=cgroup:memory.max node_cpu=runtime.NumCPU
-INFO  phase index=1 name=main starts_at=0s duration=hold cpu=500m (50%) memory=256.0Mi (50%)
-INFO  engines ready cpu_workers=1 cpu_peak_target=500m memory_peak_target=256.0Mi memory_chunk=4.0Mi
-INFO  http server listening on :8080 (metrics at /metrics)
-INFO  status phase=main(1/1) progress=100% elapsed=15s cpu_target=500m cpu_actual=494m cpu_duty=0.50 mem_target=256.0Mi mem_rss=258.1Mi cpu_pct_limit=49% mem_pct_limit=50% throttled=0.0s
-INFO  status phase=main(1/1) progress=100% elapsed=30s cpu_target=500m cpu_actual=503m cpu_duty=0.50 mem_target=256.0Mi mem_rss=257.4Mi cpu_pct_limit=50% mem_pct_limit=50% throttled=0.0s
-```
-
-Read the last line as: *"I was aiming for 500 millicores of CPU and 256 MiB of
-memory; I measured 503 millicores and 257.4 MiB."* A new one appears every 15
-seconds.
-
-`500m` is shorthand for 500 millicores, which is half of one CPU core. CPU is
-usually written this way: `250m` is a quarter of a core, `2` is two whole cores.
-
-Leave it running and open a **second terminal** for the next step. When you are
-done, press `Ctrl-C` in the first terminal to stop it.
-
-## 2. See what it is doing
-
-Open <http://localhost:8080> in a browser, or in the second terminal:
-
-```sh
-curl -s localhost:8080/
-```
-
-```
-loadsim 57bd19c - profile "loadsim"
-
-uptime            35s
-profile elapsed   35s (iteration 0)
-phase             main (1/1, 100% complete)
-ready             true
-
-cpu     target 500m       actual 509m       duty 0.50 over 1 worker(s)
-memory  target 256.0Mi    rss 257.7Mi       allocated 248.0Mi in 62 chunk(s)
-limits  cpu request=- limit=1.000 / memory request=- limit=512Mi / node cpus=16 mem=62076Mi cgroup=v2
-throttle 6/351 periods, 0.05s total
-
-...the profile chart follows.
-```
-
-The four numbers that matter:
-
-| Number | What it tells you |
-| --- | --- |
-| `cpu target` | what LoadSim was asked to use |
-| `cpu actual` | what it measured itself using - these should track each other closely |
-| `memory rss` | memory actually resident, the number monitoring tools report |
-| `throttle` | how often the container hit its CPU budget and was held back |
-
-**Why "target" and "actual" are both shown:** if your monitoring says this
-container is using 300 millicores while LoadSim says it is using 494, then your
-monitoring, not the load, is the thing worth investigating. That comparison is
-the whole point of the tool.
-
-There is also a machine-readable version at `http://localhost:8080/metrics`,
-which is the format Prometheus and most monitoring systems scrape:
-
-```sh
-curl -s localhost:8080/metrics | grep -E 'cpu_target|cpu_actual'
-```
-
-```
-loadsim_cpu_target_cores 0.5
-loadsim_cpu_actual_cores 0.49376437009865354
-```
-
-## 3. Change the load
-
-Stop the running container with `Ctrl-C` first. In every example below,
-`IMAGE` stands for `registry.gitlab.com/vkalladath/loadsim:v0.2.0` - set it
-once and the commands get shorter:
-
-```sh
-IMAGE=registry.gitlab.com/vkalladath/loadsim:v0.2.0
-```
-
-**A fixed amount, ignoring the budget:**
-
-```sh
-docker run --rm --cpus 1 --memory 512m $IMAGE --cpu 250m --memory 128Mi
-```
-
-**Load that climbs from nearly nothing to nearly the whole budget over two
-minutes, then holds:**
-
-```sh
-docker run --rm --cpus 1 --memory 512m $IMAGE \
-  --phases 'ramp:2m:cpu=5%->90%:mem=10%->80%;steady:cpu=90%:mem=80%'
-```
-
-Read that as two stages separated by `;`: a stage named `ramp` lasting `2m`
-where CPU goes from 5% to 90% of the budget, then a stage named `steady` with no
-time limit that holds those values.
-
-**Ready-made shapes.** Ten common patterns are built in:
-
-```sh
-docker run --rm $IMAGE presets
-```
-
-```
-Built-in presets (use --preset <name>, inspect with 'loadsim presets show <name>'):
-  steady         Constant 50% of the CPU and memory limit. The baseline sanity check.
-  startup-burst  Heavy 90s startup burst decaying to a modest steady state - the classic JVM/warm-cache shape that breaks request sizing.
-  ramp-up        Slow S-curve ramp from idle to the limit over 10 minutes, then hold. Good for autoscaler and alert threshold testing.
-  sawtooth       Repeating 5-minute sawtooth between 10% and 90% of the limit. Exercises metric resolution and averaging windows.
-  spiky          Low baseline with a short 95% spike every 3 minutes. The shape that p50-based sizing gets wrong.
-  memory-leak    Flat CPU with memory climbing past the limit over 30 minutes, ending in an OOM kill. Tests OOM detection and restart alerting.
-  daily-cycle    Smooth sine wave over a compressed 'day' (1 hour by default). Good for testing trend-based recommendations.
-  oversized      Uses far less than it requests (5% CPU, 20% memory of request). The right-sizing downscale case.
-  saturated      Sits at 98% of the CPU limit and 90% of the memory limit: sustained CFS throttling without an OOM kill.
-  idle           Almost nothing: 10m CPU, 32Mi memory. Useful as a control pod.
-```
-
-Run one with `--preset`:
-
-```sh
-docker run --rm --cpus 1 --memory 512m $IMAGE --preset startup-burst
-```
-
-**Preview a shape without running it.** `plan` draws the load over time and
-exits - no CPU is used, so this is the cheap way to check you asked for what you
-meant:
-
-```sh
-docker run --rm --cpus 1 --memory 512m $IMAGE plan --preset startup-burst
-```
-
-```
-resources: cpu request=- limit=1.000 / memory request=- limit=512Mi / node cpus=16 mem=62076Mi cgroup=v2
-profile "startup-burst": 2 phase(s), one pass 1m30s, then holds the last phase
-    phases  startup                                                   steady              
-            |_________________________________________________________|___________________
-CPU (cores)  peak 1.000
-     1.000 |----                                                                          
-           |###----                                                                       
-           |######-----                                                                   
-           |##########-----                                                               
-           |##############------                                                          
-      583m |###################------                                                     
-           |########################-------                                               
-           |###############################---------                                      
-           |#######################################--------------------                   
-           |##############################################################################
-           |##############################################################################
-       83m |##############################################################################
-         0 +------------------------------------------------------------------------------
-
-Memory  peak 307.2Mi
-   307.2Mi |                                             --------------###################
-           |                                       -------################################
-           |                                  ------######################################
-           |                             ------###########################################
-           |                        ------################################################
-   179.2Mi |                   ------#####################################################
-           |             -------##########################################################
-           |-------------#################################################################
-           |##############################################################################
-           |##############################################################################
-           |##############################################################################
-    25.6Mi |##############################################################################
-         0 +------------------------------------------------------------------------------
-
-      time  0       15s       30s      45s       1m       1m15s    1m30s     1m45s      2m
-
-phases:
-   1. startup          1m30s    at 0       cpu 1.000->250m ease-out   memory 102.4Mi->307.2Mi ease-in-out
-   2. steady           hold     at 1m30s   cpu 250m                   memory 307.2Mi
-```
-
-That is a container that hammers the CPU for its first minute and a half and
-then settles down - the shape that makes capacity planning hard, and a good
-first thing to point your monitoring at.
-
-## 4. Optional: run it in Kubernetes
-
-Skip this section entirely if you are not using Kubernetes; everything above
-works on its own.
-
-> **Check which cluster you are pointed at first.** These commands create things
-> in whatever cluster `kubectl` is currently configured for, which may be a real
+> **Check which cluster you are pointed at.** Everything below creates things in
+> whatever cluster `kubectl` is currently configured for, which may be a real
 > one:
 >
 > ```sh
 > kubectl config current-context
 > ```
 >
-> If that is not a test cluster you are happy to create things in, stop here and
-> switch contexts (`kubectl config use-context <name>`). The steps below put
-> everything in its own namespace and delete it again, but the safest cluster to
-> learn in is one nobody else is using.
+> If that is not a cluster you are happy to create things in, stop and switch
+> with `kubectl config use-context <name>`. Everything here goes into its own
+> namespace and is deleted again at the end, but the safest cluster to learn in
+> is one nobody else is using.
 
 Three terms, and then you have enough:
 
-- A **pod** is one or more containers running together. LoadSim is one container.
-- A **request** is what a container is promised. A **limit** is the most it may
-  use. Both are what LoadSim's percentages refer to, and it reads them from the
-  cluster by itself.
-- A **namespace** is a folder to keep things separate, so cleaning up is one
+- A **pod** is one or more containers running together. LoadSim is one container
+  in one pod.
+- A **request** is what a container is promised; a **limit** is the most it may
+  use. LoadSim reads its own request and limit from the cluster, and its
+  percentages refer to them. This is the one idea that makes the tool convenient.
+- A **namespace** is a folder that keeps things separate, so cleaning up is one
   command.
 
-Clone the repository (the manifests live in it) and deploy into a fresh
-namespace:
+## 1. Deploy it
+
+The deployment files live in the repository, so clone it first:
 
 ```sh
 git clone https://github.com/vkalladath/LoadSim.git
@@ -287,52 +62,365 @@ kubectl create namespace loadsim-demo
 kubectl apply -k deploy/k8s -n loadsim-demo
 ```
 
-Watch the pod start, then look at the same status page as before:
+That creates three things:
+
+| Thing | What it is |
+| --- | --- |
+| ConfigMap `loadsim-profile` | the load profile - the shape of the load, as YAML |
+| Deployment `loadsim` | the pod that runs it |
+| Service `loadsim` | a stable address, so Prometheus can scrape it |
+
+The pod **requests** `500m` CPU and `256Mi` memory, and is **limited** to `1`
+CPU and `512Mi`. Watch it start:
 
 ```sh
-kubectl get pods -n loadsim-demo -w        # Ctrl-C once it says Running
-kubectl logs -n loadsim-demo deploy/loadsim --tail=5
+kubectl get pods -n loadsim-demo -w
+```
+
+`STATUS` goes `ContainerCreating`, then `Running`, within a few seconds. `READY`
+stays at `0/1` for the first 20 seconds after that: the profile deliberately
+delays readiness, so that rollouts and readiness probes behave like a real
+application's. Press `Ctrl-C` to stop watching.
+
+## 2. See what it is doing
+
+LoadSim prints a status line every 15 seconds saying what it aimed for and what
+it measured:
+
+```sh
+kubectl logs -n loadsim-demo deploy/loadsim --tail=4
+```
+
+```
+INFO  resolved resources cpu_request=500m cpu_limit=1.000 memory_request=256.0Mi memory_limit=512.0Mi sources=cpu_limit=cgroup:cpu.max cpu_request=env:LOADSIM_CPU_REQUEST_MILLI ...
+INFO  phase index=1 name=cold-start starts_at=0s duration=1m30s cpu=1.000->300m ease-out memory=76.8Mi->281.6Mi ease-in-out
+INFO  phase index=2 name=steady starts_at=1m30s duration=hold cpu=250m (25%) memory=307.2Mi (60%)
+INFO  status phase=steady(2/2) progress=100% elapsed=2m45s cpu_target=249m cpu_actual=256m cpu_duty=0.13 mem_target=307.2Mi mem_rss=306.4Mi cpu_pct_limit=26% mem_pct_limit=60% throttled=0.1s
+```
+
+Read the last line as: *"I was aiming for 249 millicores of CPU and 307.2 MiB of
+memory; I measured 256 millicores and 306.4 MiB."* (The CPU target moves by a few
+millicores because this profile adds 4% noise, so the load is not suspiciously
+flat.)
+
+`250m` means 250 millicores, a quarter of a CPU core. CPU is usually written
+this way: `500m` is half a core, `2` is two whole cores.
+
+**Why both numbers are printed:** if your monitoring says this pod is using
+120 millicores while LoadSim says 248, then your monitoring - not the load - is
+the thing worth investigating. That comparison is the whole point of the tool.
+
+Two other ways to look at the same run:
+
+```sh
+# the cluster's own view (needs metrics-server installed)
+kubectl top pod -n loadsim-demo
+```
+
+The `CPU` and `MEMORY` columns should land close to the `cpu_target` and
+`mem_target` in the log. If they do not, that gap is a finding.
+
+```sh
+# LoadSim's own status page and metrics
 kubectl port-forward -n loadsim-demo deploy/loadsim 8080:8080
 ```
 
-With the port-forward running, <http://localhost:8080> shows the status page.
+With that running, open <http://localhost:8080> in a browser:
 
-The deployed pod asks for `cpu: 500m` / `memory: 256Mi` and is limited to `1`
-CPU / `512Mi`, and the profile it runs is a startup burst that settles down -
-so its CPU graph in your monitoring should be tall for the first 90 seconds and
-low afterwards. That is the thing to go and look for in whatever dashboard you
-are testing.
+```
+loadsim - profile "startup-burst"
 
-To change the load, edit the profile in the ConfigMap and restart:
+uptime            2m55s
+profile elapsed   2m55s (iteration 0)
+phase             steady (2/2, 100% complete)
+ready             true
 
-```sh
-kubectl edit configmap loadsim-profile -n loadsim-demo     # change the numbers
-kubectl rollout restart deploy/loadsim -n loadsim-demo
+cpu     target 248m       actual 257m       duty 0.13 over 2 worker(s)
+memory  target 307.2Mi    rss 307.1Mi       allocated 296.0Mi in 74 chunk(s)
+limits  cpu request=0.500 limit=1.000 / memory request=256Mi limit=512Mi / node cpus=16
+throttle 3/1748 periods, 0.11s total
+
+...the profile chart follows.
 ```
 
-Clean up completely:
+`http://localhost:8080/metrics` is the same information in the format
+Prometheus and most monitoring systems scrape. Press `Ctrl-C` to end the
+port-forward.
+
+## 3. Change the load
+
+There are two ways, and it is worth knowing which to use when.
+
+**For a quick experiment, set environment variables.** Every setting has one,
+and they override the profile in the ConfigMap. `kubectl set env` also restarts
+the pod for you:
+
+```sh
+kubectl set env deploy/loadsim -n loadsim-demo LOADSIM_CPU=90% LOADSIM_MEMORY=40%
+```
+
+That is 90% of the pod's CPU limit - 900 millicores - and 40% of its memory
+limit. Watch the effect:
+
+```sh
+kubectl logs -n loadsim-demo deploy/loadsim --tail=2 -f
+```
+
+**For the profile you actually want to keep, edit the ConfigMap:**
+
+```sh
+kubectl edit configmap loadsim-profile -n loadsim-demo
+kubectl rollout restart deploy/loadsim -n loadsim-demo     # picks up the change
+```
+
+To undo an environment variable, name it with a trailing `-`:
+
+```sh
+kubectl set env deploy/loadsim -n loadsim-demo LOADSIM_CPU- LOADSIM_MEMORY-
+```
+
+Two things that will save you a confused half hour:
+
+- **Set `LOADSIM_CPU` and `LOADSIM_MEMORY` together.** Either one on its own
+  replaces the whole profile, so setting only `LOADSIM_MEMORY` leaves the CPU
+  target at **zero**.
+- **`LOADSIM_PRESET` has no effect on this Deployment.** A mounted profile file
+  outranks a preset, and this Deployment mounts one. Use `LOADSIM_PHASES` (below)
+  or edit the ConfigMap. Presets do work on the Deployment in
+  `deploy/k8s/deployment-args-only.yaml`, which mounts nothing.
+
+### Shapes, not just levels
+
+`LOADSIM_PHASES` describes a sequence of stages on one line:
+
+```sh
+kubectl set env deploy/loadsim -n loadsim-demo \
+  LOADSIM_PHASES='warmup:2m:cpu=10%->90%:mem=20%->60%;steady:cpu=30%:mem=60%'
+```
+
+Read it as two stages separated by `;`: a stage named `warmup` lasting `2m`
+where CPU climbs from 10% to 90% of the limit, then a stage named `steady` with
+no time limit that holds 30% and 60%.
+
+### Preview a shape before deploying it
+
+`plan` draws a profile and exits without generating any load. Run it as a
+throwaway pod:
+
+```sh
+kubectl run loadsim-plan -n loadsim-demo --rm -it --restart=Never \
+  --image=registry.gitlab.com/vkalladath/loadsim:v0.2.0 \
+  -- plan --preset memory-leak --cpu-limit 1 --memory-limit 512Mi
+```
+
+```
+warning: peak memory target 614.4Mi is within 5% of (or above) the memory limit 512.0Mi; expect an OOM kill
+profile "memory-leak": 2 phase(s), one pass 30m, then holds the last phase
+    phases  leak                                                   past-the-limit
+            |______________________________________________________|______________
+Memory  peak 614.4Mi
+   614.4Mi |                                                --------##############
+           |                                         --------#####################
+           |                                  --------############################
+           |                           --------###################################
+   368.6Mi |                    --------##########################################
+           |             --------#################################################
+           |      --------########################################################
+           |-------###############################################################
+           |######################################################################
+    61.4Mi |######################################################################
+         0 +----------------------------------------------------------------------
+
+phases:
+   1. leak             30m      at 0       cpu 200m   memory 128.0Mi->614.4Mi linear
+   2. past-the-limit   hold     at 30m     cpu 200m   memory 614.4Mi
+```
+
+## 4. High memory usage
+
+Memory is where the interesting failure modes are, so it gets its own section.
+All of these assume the pod deployed in step 1, with a `512Mi` memory limit.
+
+### A constant high level
+
+85% of the pod's memory limit, about 435 MiB:
+
+```sh
+kubectl set env deploy/loadsim -n loadsim-demo LOADSIM_CPU=20% LOADSIM_MEMORY=85%
+```
+
+Confirm it landed:
+
+```sh
+kubectl logs -n loadsim-demo deploy/loadsim --tail=1
+# INFO status phase=main(1/1) cpu_target=200m cpu_actual=200m mem_target=435.2Mi
+#      mem_rss=436.3Mi cpu_pct_limit=20% mem_pct_limit=85%
+```
+
+`mem_rss` is resident memory - the number `kubectl top`, cAdvisor and most
+monitoring agents report. LoadSim writes to every page it holds, so this is real
+resident memory, not a reservation.
+
+### An exact amount instead of a percentage
+
+```sh
+kubectl set env deploy/loadsim -n loadsim-demo LOADSIM_CPU=20% LOADSIM_MEMORY=400Mi
+```
+
+### More memory than the limit allows
+
+`512Mi` caps what the pod may use, so `LOADSIM_MEMORY=2Gi` cannot work. Raise
+the pod's own limit and the percentage follows automatically:
+
+```sh
+kubectl set resources deploy/loadsim -n loadsim-demo \
+  --requests=memory=1Gi --limits=memory=2Gi
+```
+
+The profile still says `85%`, and the pod now targets about 1.7 GiB. Nothing
+about the load definition changed - that is the point of writing profiles as
+percentages.
+
+Two things to keep in mind: the node needs room for the bigger request, or the
+pod will sit in `Pending`; and a pod cannot be resized in place on most
+clusters, so this restarts it.
+
+### Memory that climbs, then holds
+
+```sh
+kubectl set env deploy/loadsim -n loadsim-demo \
+  LOADSIM_PHASES='fill:3m:cpu=20%:mem=20%->85%;hold:cpu=20%:mem=85%'
+```
+
+```
+Memory  peak 435.2Mi
+   435.2Mi |                                              ----------##################
+           |                                     ----------###########################
+           |                            ----------####################################
+   272.0Mi |                   ----------#############################################
+           |          ----------######################################################
+           | ----------###############################################################
+           |--########################################################################
+    54.4Mi |##########################################################################
+         0 +--------------------------------------------------------------------------
+      time  0       30s      1m      1m30s     2m      2m30s     3m      3m30s      4m
+```
+
+This is the shape to point a memory alert at: it crosses any threshold you pick,
+once, at a time you can predict.
+
+### On purpose: run out of memory and get killed
+
+Ask for more memory than the limit and Kubernetes kills the pod. That is a
+feature - it is how you test OOM alerting and restart handling.
+
+```sh
+kubectl set env deploy/loadsim -n loadsim-demo \
+  LOADSIM_PHASES='leak:3m:cpu=10%:mem=30%->130%@linear' \
+  LOADSIM_MEM_SOFT_LIMIT=false
+```
+
+`LOADSIM_MEM_SOFT_LIMIT=false` matters: by default LoadSim tells the Go garbage
+collector about the limit so it does not die *accidentally*. Turning that off
+lets it die deliberately.
+
+Within a few minutes:
+
+```sh
+kubectl get pods -n loadsim-demo
+# RESTARTS starts climbing
+
+kubectl describe pod -n loadsim-demo -l app.kubernetes.io/name=loadsim | grep -A3 'Last State'
+# Last State:  Terminated
+#   Reason:    OOMKilled
+#   Exit Code: 137
+```
+
+Left alone, the pod will restart, fill up, and be killed again - eventually
+landing in `CrashLoopBackOff`, exactly as a leaking application would. Stop it
+by removing the two variables:
+
+```sh
+kubectl set env deploy/loadsim -n loadsim-demo LOADSIM_PHASES- LOADSIM_MEM_SOFT_LIMIT-
+```
+
+### The memory settings, in one table
+
+| To do this | Set |
+| --- | --- |
+| A constant level, relative to the limit | `LOADSIM_MEMORY=85%` |
+| A constant exact amount | `LOADSIM_MEMORY=400Mi` |
+| Measure against the request instead of the limit | `LOADSIM_PERCENT_BASE=request` |
+| Climb, then hold | `LOADSIM_PHASES='fill:3m:cpu=20%:mem=20%->85%;hold:cpu=20%:mem=85%'` |
+| Get OOM-killed on purpose | a target above `100%`, plus `LOADSIM_MEM_SOFT_LIMIT=false` |
+| Use bigger numbers | raise the pod's limit with `kubectl set resources` |
+| Keep pages resident on a node with swap | `LOADSIM_MEM_TOUCH_INTERVAL=30s` |
+
+Remember to set `LOADSIM_CPU` alongside `LOADSIM_MEMORY`, or the CPU target
+drops to zero.
+
+## 5. Clean up
 
 ```sh
 kubectl delete namespace loadsim-demo
 ```
 
+That removes everything this guide created.
+
+## Optional: run it on your laptop instead
+
+No cluster needed - useful for trying profiles quickly. The only difference is
+that you state the budget with Docker flags instead of the cluster stating it:
+
+```sh
+docker run --rm -p 8080:8080 --cpus 1 --memory 512m \
+  registry.gitlab.com/vkalladath/loadsim:v0.2.0 --cpu 50% --memory 85%
+```
+
+| Part | Meaning |
+| --- | --- |
+| `--cpus 1 --memory 512m` | the budget, the same role a pod's limits play |
+| `--cpu 50% --memory 85%` | what LoadSim should use out of that budget |
+| `-p 8080:8080` | serves the status page at `http://localhost:8080` |
+
+`Ctrl-C` stops it. Podman works identically - type `podman` for `docker`.
+
+Everything else behaves as it does in the cluster:
+
+```sh
+IMAGE=registry.gitlab.com/vkalladath/loadsim:v0.2.0
+
+docker run --rm $IMAGE presets                                  # the ten built-in shapes
+docker run --rm --cpus 1 --memory 512m $IMAGE plan --preset spiky
+docker run --rm --cpus 1 --memory 512m $IMAGE --preset memory-leak
+docker run --rm $IMAGE --help
+```
+
+Locally, `--preset` does work, because there is no mounted profile to outrank it.
+
+It is safe to run: it burns CPU and fills memory inside its own container, up to
+the budget you gave it, makes no network connections, writes no files, and stops
+on `Ctrl-C`. Just do not hand it a budget so large that your machine suffers.
+
 ## When something looks wrong
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
-| `cpu_actual` well below `cpu_target`, `throttled` climbing | You asked for more CPU than the container is allowed to use. Often deliberate - this is how you test throttling. | Lower the percentage, or raise `--cpus` |
-| Warning: `both cpu and memory targets resolve to zero` | You used percentages but the container has no budget to be a percentage of. | Add `--cpus 1 --memory 512m`, or state the numbers directly: `--cpu-limit 1 --memory-limit 512Mi` |
-| Container exits with code `137`, or `OOMKilled` | The memory target went above the container's memory budget, so the system killed it. Expected with `--preset memory-leak`. | Lower the memory target, or raise `--memory` |
-| `port is already allocated` | Something else is using port 8080. | Use a different local port: `-p 18080:8080`, then browse to `localhost:18080` |
-| Podman: an error mentioning `--cpus` or cgroups | Rootless Podman cannot always set a CPU budget. | Drop `--cpus`/`--memory` and tell LoadSim the numbers instead: `--cpu-limit 1 --memory-limit 512Mi` |
-| `unknown curve` / `invalid cpu quantity` | A typo in a profile. The message lists the valid options. | Check it with `plan` before running it |
-| Kubernetes pod stuck in `Pending` | The cluster has no room for the requested CPU/memory. | Lower the `requests` in `deploy/k8s/deployment.yaml` |
+| Pod stuck in `Pending` | The node has no room for the requested CPU/memory. | Lower `requests` (`kubectl set resources ... --requests=cpu=100m,memory=64Mi`) |
+| `ImagePullBackOff` | The cluster cannot reach the image. | Check the name; the image is public, so a proxy or air-gapped cluster is the usual cause |
+| `RESTARTS` climbing, `OOMKilled` | The memory target went above the pod's memory limit. Deliberate in the OOM example above. | Lower the target, or raise the limit |
+| `CrashLoopBackOff` | Same thing, repeatedly. | Remove the overrides: `kubectl set env deploy/loadsim -n loadsim-demo LOADSIM_PHASES- LOADSIM_MEM_SOFT_LIMIT-` |
+| `cpu_actual` below `cpu_target`, `throttled` climbing | You asked for more CPU than the limit allows. Often deliberate - this is how throttling is tested. | Lower the CPU target, or raise the CPU limit |
+| Memory target set, but `mem_rss` stays flat and low | Only `LOADSIM_MEMORY` was set, or the pod did not restart. | Set `LOADSIM_CPU` too; check `kubectl rollout status deploy/loadsim -n loadsim-demo` |
+| `LOADSIM_PRESET` seems ignored | A mounted profile outranks a preset. | Use `LOADSIM_PHASES`, or edit the ConfigMap |
+| Warning: `both cpu and memory targets resolve to zero` | Percentages were used where no request or limit is set. | Set limits on the pod, or give absolute values like `250m` and `400Mi` |
+| `kubectl top` says `Metrics API not available` | metrics-server is not installed. | Use `kubectl logs` and the `/metrics` endpoint instead |
+| `unable to listen on port 8080` | Something else holds the local port. | `kubectl port-forward ... 18080:8080` and browse to `localhost:18080` |
+| Locally: Podman errors about `--cpus` | Rootless Podman cannot always set a budget. | Drop `--cpus`/`--memory` and pass `--cpu-limit 1 --memory-limit 512Mi` instead |
 
-Every command also accepts `--help`:
-
-```sh
-docker run --rm $IMAGE --help
-```
+Every command accepts `--help`, and `kubectl logs` is almost always the fastest
+answer - LoadSim logs its resolved targets and warns about impossible ones at
+startup.
 
 ## Where to go next
 
@@ -341,6 +429,6 @@ docker run --rm $IMAGE --help
 | Understand every setting | [CONFIGURATION.md](CONFIGURATION.md) |
 | See all the load shapes, and pick one for a scenario | [PROFILES.md](PROFILES.md) |
 | Wire it into Prometheus and write queries | [METRICS.md](METRICS.md) |
-| Run it properly on Kubernetes, test autoscaling | [KUBERNETES.md](KUBERNETES.md) |
+| Test autoscaling, right-sizing, throttling properly | [KUBERNETES.md](KUBERNETES.md) |
 | Know how accurate it is and how it works inside | [DESIGN.md](DESIGN.md) |
 | Build and publish your own image | [RELEASING.md](RELEASING.md) |

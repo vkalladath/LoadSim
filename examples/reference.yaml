@@ -59,6 +59,7 @@ engine:
     max_step: ""                 # e.g. "64Mi": cap growth per reconcile tick
     touch_interval: 0            # re-touch every held page this often
     release_interval: 2s         # min interval between returning pages to the OS
+    release_threshold: 32Mi      # smallest net drop worth a forced (stop-the-world) release
     fill: random                 # random (incompressible) | zero
     soft_limit: true             # tell the Go GC about the memory limit
     soft_limit_fraction: 0.9     # soft limit = fraction * memory limit

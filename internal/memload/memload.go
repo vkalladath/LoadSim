@@ -50,6 +50,11 @@ type Options struct {
 	// ReleaseInterval rate-limits the forced return of freed pages to the OS,
 	// which is a stop-the-world operation (default 2s).
 	ReleaseInterval time.Duration
+	// ReleaseThresholdBytes is the smallest shrink worth a forced release.
+	// Below it the chunks are simply left to the ordinary garbage collector,
+	// because a stop-the-world collection stalls the CPU workers and shows up
+	// as the process missing its CPU target (default 32Mi).
+	ReleaseThresholdBytes int64
 	// Fill selects the byte pattern (default FillRandom).
 	Fill Fill
 	// SoftLimitBytes, when > 0, is passed to the Go runtime as a soft memory
@@ -71,6 +76,7 @@ type Engine struct {
 	rssBytes     atomic.Int64
 	cgroupUsed   atomic.Int64
 	overheadBits atomic.Uint64 // float64 bytes: RSS not held by the engine
+	peakHeld     atomic.Int64  // high-water mark since the last forced release
 	touches      atomic.Uint64
 
 	mu     sync.Mutex
@@ -88,6 +94,9 @@ func New(opts Options) *Engine {
 	}
 	if opts.ReleaseInterval <= 0 {
 		opts.ReleaseInterval = 2 * time.Second
+	}
+	if opts.ReleaseThresholdBytes <= 0 {
+		opts.ReleaseThresholdBytes = 32 << 20
 	}
 	if opts.Fill == "" {
 		opts.Fill = FillRandom
@@ -165,12 +174,16 @@ func (e *Engine) Run(ctx context.Context) {
 			e.touchAll()
 		case <-tick.C:
 			e.sample()
-			shrank := e.reconcile()
-			if shrank && time.Since(lastRelease) >= e.opts.ReleaseInterval {
+			e.reconcile()
+			// Only a material net shrink earns a forced release: it is a
+			// stop-the-world collection, so doing it for every few megabytes of
+			// jitter would cost the process its CPU target.
+			if e.releaseDue() && time.Since(lastRelease) >= e.opts.ReleaseInterval {
 				// Give the pages back so RSS follows the target downwards;
 				// without this the Go runtime would keep them cached.
 				debug.FreeOSMemory()
 				lastRelease = time.Now()
+				e.peakHeld.Store(e.held.Load())
 			}
 		}
 	}
@@ -199,9 +212,23 @@ func (e *Engine) sample() {
 	e.overheadBits.Store(math.Float64bits(prev*(1-alpha) + overhead*alpha))
 }
 
-// reconcile grows or shrinks the chunk list towards the target and reports
-// whether memory was released.
-func (e *Engine) reconcile() (shrank bool) {
+// releaseDue reports whether held memory has fallen far enough below its
+// high-water mark to be worth a forced return of pages to the OS. Measuring
+// against the high-water mark rather than summing every shrink means a target
+// that merely oscillates never triggers one, while a genuine ramp down does.
+func (e *Engine) releaseDue() bool {
+	held := e.held.Load()
+	peak := e.peakHeld.Load()
+	if held >= peak {
+		e.peakHeld.Store(held)
+		return false
+	}
+	return peak-held >= e.opts.ReleaseThresholdBytes
+}
+
+// reconcile grows or shrinks the chunk list towards the target and reports how
+// many bytes it dropped.
+func (e *Engine) reconcile() (released int64) {
 	target := math.Float64frombits(e.targetBits.Load())
 	if e.opts.Compensate {
 		// The target describes total resident memory, so hold only the part the
@@ -239,11 +266,11 @@ func (e *Engine) reconcile() (shrank bool) {
 		for i := want; i < len(e.chunks); i++ {
 			e.chunks[i] = nil
 		}
+		released = int64(len(e.chunks)-want) * int64(e.opts.ChunkSize)
 		e.chunks = e.chunks[:want]
-		shrank = true
 	}
 	e.held.Store(int64(len(e.chunks)) * int64(e.opts.ChunkSize))
-	return shrank
+	return released
 }
 
 // newChunk allocates one chunk and faults in every page.

@@ -21,6 +21,7 @@ data:
         cpu: 100% -> 30% @ease-out
         memory: 15% -> 55% @ease-in-out
       - name: steady
-        cpu: 25%
+        cpu:
+          to: 25%
+          jitter: "4%"   # a little noise, so the metric is not suspiciously flat
         memory: 60%
-        jitter: 4%

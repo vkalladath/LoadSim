@@ -125,6 +125,10 @@ type MemEngineConfig struct {
 	TouchInterval profile.Duration `yaml:"touch_interval,omitempty" json:"touch_interval,omitempty"`
 	// ReleaseInterval rate-limits returning freed pages to the OS (default 2s).
 	ReleaseInterval profile.Duration `yaml:"release_interval,omitempty" json:"release_interval,omitempty"`
+	// ReleaseThreshold is the smallest shrink worth a forced release to the OS
+	// (default 32Mi). Forcing one is stop-the-world, so releasing on every few
+	// megabytes of jitter costs the process its CPU target.
+	ReleaseThreshold string `yaml:"release_threshold,omitempty" json:"release_threshold,omitempty"`
 	// Fill is the byte pattern: random (default) or zero.
 	Fill string `yaml:"fill,omitempty" json:"fill,omitempty"`
 	// SoftLimit tells the Go GC about the container memory limit so the process
@@ -184,6 +188,7 @@ func Default() *Config {
 				ChunkSize:         "4Mi",
 				Interval:          profile.Duration(200 * time.Millisecond),
 				ReleaseInterval:   profile.Duration(2 * time.Second),
+				ReleaseThreshold:  "32Mi",
 				Fill:              string(memload.FillRandom),
 				SoftLimit:         ptrBool(true),
 				Compensate:        ptrBool(true),
@@ -391,6 +396,14 @@ func (c *Config) Compile() (*Compiled, error) {
 	default:
 		return nil, fmt.Errorf("engine.memory.fill: unknown value %q (want random or zero)", c.Engine.Memory.Fill)
 	}
+	var releaseThreshold int64
+	if s := c.Engine.Memory.ReleaseThreshold; s != "" {
+		q, err := units.ParseBytes(s)
+		if err != nil {
+			return nil, fmt.Errorf("engine.memory.release_threshold: %w", err)
+		}
+		releaseThreshold = int64(q.Resolve(out.MemBases))
+	}
 	var soft int64
 	if boolOr(c.Engine.Memory.SoftLimit, true) && out.Resources.MemLimitBytes > 0 {
 		frac := c.Engine.Memory.SoftLimitFraction
@@ -400,14 +413,15 @@ func (c *Config) Compile() (*Compiled, error) {
 		soft = int64(out.Resources.MemLimitBytes * frac)
 	}
 	out.MemEngine = memload.Options{
-		ChunkSize:       chunk,
-		Interval:        c.Engine.Memory.Interval.D(),
-		MaxStepBytes:    maxStep,
-		TouchInterval:   c.Engine.Memory.TouchInterval.D(),
-		ReleaseInterval: c.Engine.Memory.ReleaseInterval.D(),
-		Fill:            fill,
-		SoftLimitBytes:  soft,
-		Compensate:      boolOr(c.Engine.Memory.Compensate, true),
+		ChunkSize:             chunk,
+		Interval:              c.Engine.Memory.Interval.D(),
+		MaxStepBytes:          maxStep,
+		TouchInterval:         c.Engine.Memory.TouchInterval.D(),
+		ReleaseInterval:       c.Engine.Memory.ReleaseInterval.D(),
+		ReleaseThresholdBytes: releaseThreshold,
+		Fill:                  fill,
+		SoftLimitBytes:        soft,
+		Compensate:            boolOr(c.Engine.Memory.Compensate, true),
 	}
 
 	switch strings.ToLower(c.Logging.Format) {

@@ -83,6 +83,7 @@ var flagDefs = []flagDef{
 	{name: "mem-max-step", usage: "cap on memory allocated per reconcile tick, e.g. '64Mi'"},
 	{name: "mem-touch-interval", usage: "re-touch all held pages this often (0 = never)"},
 	{name: "mem-release-interval", usage: "minimum interval between returning pages to the OS"},
+	{name: "mem-release-threshold", usage: "smallest shrink worth a forced release to the OS, e.g. '32Mi'"},
 	{name: "mem-fill", usage: "byte pattern for allocated memory: random or zero"},
 	{name: "mem-soft-limit", usage: "tell the Go GC about the memory limit to avoid accidental OOM", boolLike: true},
 	{name: "mem-soft-limit-fraction", usage: "fraction of the memory limit used as the GC soft limit"},
@@ -303,6 +304,7 @@ func (f *Flags) apply(cfg *Config) error {
 	str("cpu-work", &cfg.Engine.CPU.Work)
 	str("mem-chunk-size", &cfg.Engine.Memory.ChunkSize)
 	str("mem-max-step", &cfg.Engine.Memory.MaxStep)
+	str("mem-release-threshold", &cfg.Engine.Memory.ReleaseThreshold)
 	str("mem-fill", &cfg.Engine.Memory.Fill)
 	str("log-format", &cfg.Logging.Format)
 

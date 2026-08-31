@@ -214,6 +214,7 @@ Phase transitions are always logged, regardless of `interval`.
 | `max_step` | - | cap on allocation per tick, e.g. `64Mi`, to model a slow allocator |
 | `touch_interval` | `0` | re-touch every held page this often; defeats swap and reclaim |
 | `release_interval` | `2s` | minimum interval between returning freed pages to the OS |
+| `release_threshold` | `32Mi` | smallest net drop below the high-water mark worth a forced release; forcing one is stop-the-world, so small oscillations are left to the ordinary GC |
 | `fill` | `random` | `random` (incompressible) or `zero` (cheap, dedupable) |
 | `soft_limit` | `true` | tell the Go GC about the memory limit to avoid accidental OOM |
 | `soft_limit_fraction` | `0.9` | soft limit = fraction x memory limit |
@@ -267,7 +268,7 @@ disable (`--loop=false`). `--loop false` does **not** work.
 | `--cpu-feedback`, `--cpu-gain`, `--cpu-work`, `--cpu-stagger` | `LOADSIM_CPU_FEEDBACK`, ... |
 | `--max-procs` | `LOADSIM_MAX_PROCS` |
 | `--mem-chunk-size`, `--mem-interval`, `--mem-max-step` | `LOADSIM_MEM_CHUNK_SIZE`, ... |
-| `--mem-touch-interval`, `--mem-release-interval`, `--mem-fill` | `LOADSIM_MEM_TOUCH_INTERVAL`, ... |
+| `--mem-touch-interval`, `--mem-release-interval`, `--mem-release-threshold`, `--mem-fill` | `LOADSIM_MEM_TOUCH_INTERVAL`, ... |
 | `--mem-soft-limit`, `--mem-soft-limit-fraction`, `--mem-compensate` | `LOADSIM_MEM_SOFT_LIMIT`, ... |
 
 `loadsim help` prints the authoritative list, with each flag's environment
